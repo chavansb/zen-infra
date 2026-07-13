@@ -20,8 +20,8 @@ module "eks" {
   env                = "dev"
   cluster_version    = "1.33"
   subnet_ids         = module.vpc.private_eks_subnet_ids
-  node_instance_type = "t3.small"
-  desired_capacity   = 4
+  node_instance_type = "t3.medium"   
+  desired_capacity   = 2            
   min_size           = 1
   max_size           = 4
 }
@@ -66,6 +66,7 @@ module "iam" {
   oidc_provider_url = module.eks.oidc_provider_url
   aws_account_id    = data.aws_caller_identity.current.account_id
   github_org        = var.github_org
+  create_github_oidc_provider = true
 }
 
 module "secrets_manager" {

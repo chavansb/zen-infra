@@ -19,24 +19,36 @@
 # ─────────────────────────────────────────────────────────────────────────────
 
 # GitHub Actions OIDC provider — one per AWS account, shared across all repos
+# Creates provider — dev only
 resource "aws_iam_openid_connect_provider" "github_actions" {
-  url = "https://token.actions.githubusercontent.com"
+  count = var.create_github_oidc_provider ? 1 : 0
 
+  url            = "https://token.actions.githubusercontent.com"
   client_id_list = ["sts.amazonaws.com"]
-
-  # Thumbprint for token.actions.githubusercontent.com (stable, verified by AWS)
   thumbprint_list = [
     "6938fd4d98bab03faadb97b34396831e3780aea1",
     "1c58a3a8518e8759bf075b76b750d4f2df264fcd",
   ]
-
   tags = {
     Name    = "github-actions-oidc-provider"
     Project = var.project
   }
 }
 
-# Trust policy — restricts which repos and branches can assume this role
+# Reads existing provider — qa and prod
+data "aws_iam_openid_connect_provider" "github_actions" {
+  count = var.create_github_oidc_provider ? 0 : 1
+  url   = "https://token.actions.githubusercontent.com"
+}
+
+locals {
+  github_oidc_provider_arn = var.create_github_oidc_provider ? (
+    aws_iam_openid_connect_provider.github_actions[0].arn
+  ) : (
+    data.aws_iam_openid_connect_provider.github_actions[0].arn
+  )
+}
+
 data "aws_iam_policy_document" "github_actions_assume_role" {
   statement {
     actions = ["sts:AssumeRoleWithWebIdentity"]
@@ -44,7 +56,7 @@ data "aws_iam_policy_document" "github_actions_assume_role" {
 
     principals {
       type        = "Federated"
-      identifiers = [aws_iam_openid_connect_provider.github_actions.arn]
+      identifiers = [local.github_oidc_provider_arn]
     }
 
     condition {
@@ -53,7 +65,6 @@ data "aws_iam_policy_document" "github_actions_assume_role" {
       values   = ["sts.amazonaws.com"]
     }
 
-    # Allow both frontend and backend repos; restrict to main and develop branches
     condition {
       test     = "StringLike"
       variable = "token.actions.githubusercontent.com:sub"
@@ -68,8 +79,8 @@ data "aws_iam_policy_document" "github_actions_assume_role" {
 }
 
 resource "aws_iam_role" "github_actions_ci" {
-  name               = "${var.project}-${var.env}-github-actions-role"
-  assume_role_policy = data.aws_iam_policy_document.github_actions_assume_role.json
+  name                 = "${var.project}-${var.env}-github-actions-role"
+  assume_role_policy   = data.aws_iam_policy_document.github_actions_assume_role.json
   max_session_duration = 3600  # 1 hour — enough for any CI job
 
   tags = {
@@ -88,9 +99,9 @@ resource "aws_iam_policy" "github_actions_ci_policy" {
     Version = "2012-10-17"
     Statement = [
       {
-        Sid    = "ECRAuth"
-        Effect = "Allow"
-        Action = ["ecr:GetAuthorizationToken"]
+        Sid      = "ECRAuth"
+        Effect   = "Allow"
+        Action   = ["ecr:GetAuthorizationToken"]
         Resource = "*"
       },
       {
@@ -108,7 +119,6 @@ resource "aws_iam_policy" "github_actions_ci_policy" {
           "ecr:ListImages",
           "ecr:DescribeImages",
         ]
-        # Allow all ECR repos in this account (role is already scoped to specific GitHub repos via trust policy)
         Resource = "arn:aws:ecr:*:${var.aws_account_id}:repository/*"
       },
       {
