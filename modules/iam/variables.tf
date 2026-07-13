@@ -27,3 +27,9 @@ variable "github_org" {
   description = "GitHub organization or username that owns zen-pharma-frontend and zen-pharma-backend"
   type        = string
 }
+
+variable "create_github_oidc_provider" {
+  description = "Set true only for dev — GitHub OIDC provider is account-wide, only one can exist per AWS account"
+  type        = bool
+  default     = false
+}
